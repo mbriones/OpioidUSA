@@ -1,0 +1,140 @@
+---
+title: "Opioid Death and Prescriptions"
+author: "Miguel Briones"
+date: "December 14, 2017"
+output: pdf_document
+---
+
+## Overview
+We will analyze the relationship between death in the U.S. resulting from opioid overdose with the number of opioid prescriptions written over the span of 15 years.
+
+First, we will load the data from a publically available dataset found on data.world.
+```{r setup, include=FALSE}
+library(readr) 
+library(dplyr) 
+library(lubridate) 
+library(data.table) 
+library(ggplot2)
+library(caret)
+
+#Set up working directory
+#setwd("~/Desktop/Programming/R Projects/Opioid Death ")
+
+#Load the data into R - OpioidDeath from 1999-2014
+OpioidDeath <- read.csv("https://query.data.world/s/sEJEHauCDs9uCJr1MCtolM61NjAvdg", header=TRUE, stringsAsFactors=FALSE)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Which state has the most overall deaths?
+
+We first want to ask which state had to most overall deaths due to opioid overdosing.
+
+```{r}
+StateDeath <- data_frame(OpioidDeath$State, OpioidDeath$Deaths)
+colnames(StateDeath) <- c("State", "Deaths")
+StateDeath <- subset(StateDeath, Deaths != "Suppressed")
+StateDeath$Deaths <- as.numeric(as.character(StateDeath$Deaths))
+StateDeath <- aggregate(. ~  State, data = StateDeath, sum)
+StateDeath <- arrange(StateDeath, desc(Deaths))
+StateDeath.Top <- StateDeath[1:10,]
+
+ggplot(StateDeath.Top, aes(x=State, y=Deaths, fill = State)) + geom_bar(stat = "Identity")
+StateDeath.Top
+```
+
+We can see that the state of California had the most deaths across the 15 years of available data with 27,044 deaths.
+
+## What year was most fatal for California in relation to that years population size?
+The next question we can ask is what year was the most fatal for California in relation to it's population size that given year?
+
+```{r}
+CaliDeath <- data_frame(OpioidDeath$State, OpioidDeath$Year, OpioidDeath$Deaths, OpioidDeath$Population)
+colnames(CaliDeath) <- c("State", "Year", "Deaths", "Population")
+CaliDeath <- subset(CaliDeath, Deaths != "Suppressed" & State == "California")
+CaliDeath$Deaths <- as.numeric(as.character(CaliDeath$Deaths))
+CaliDeath <- arrange(CaliDeath, desc(Deaths))
+CaliDeath[,2:3]
+```
+
+We can see that before population normalization, 2014 was the most fatal year with 2,159 deaths.
+
+```{r}
+CaliDeath$Porportion <- CaliDeath$Deaths/CaliDeath$Population *exp(10)
+CaliDeath <- arrange(CaliDeath, desc(Porportion))
+CaliDeath[,c("Year", "Porportion")]
+```
+
+When normalized to the size of the population, 2009 was the most fatal year. 
+
+## Is there a relationship between perscriptions dispensed and number of deaths for the state of California?
+
+The next question we wanted to ask was whether there was a relationship between the number of deaths per year and the number of prescriptions for opioids filled per year.
+
+```{r}
+CaliPrescrip <- data_frame(OpioidDeath$State, OpioidDeath$Year, OpioidDeath$Deaths, OpioidDeath$Prescriptions.Dispensed.by.US.Retailers.in.that.year..millions.)
+colnames(CaliPrescrip) <- c("State", "Year", "Deaths", "Prescriptions")
+CaliPrescrip <- subset(CaliPrescrip, Deaths != "Suppressed" & State == "California")
+CaliPrescrip$Deaths <- as.numeric(as.character(CaliPrescrip$Deaths))
+
+ggplot(CaliPrescrip, aes(x = Deaths, y = Prescriptions)) + geom_point()
+CaliPrescripRelation <-lm(Prescriptions~Deaths, data=CaliPrescrip)
+summary(CaliPrescripRelation)
+```
+
+
+We see that our intercept is 66.9 and our slope is 0.06. We can intepret it as California having an average increase of 67 deaths per year over the course of 15 years. The slope indicates that every 1 increase in death is equal to 1/6th of a prescription. Our R squared is 60%, indicating that roughly 60% of the variance in deaths can be explained by the number ofprescriptions. Our F-statstic is 21.1, with a p-value of >0.01, indicating that there is a strong relationship Prescriptions and Number of Deaths in the state of California. However, it can be stronger. 
+
+Next, we wanted to a correlation test between number of deaths and number of prescriptions filled. 
+```{r}
+cor.test(x=CaliPrescrip$Deaths, y=CaliPrescrip$Prescriptions, method = 'pearson')
+```
+
+We see that our t value is equal to 4.5932 and our r is equal to 0.775315. Therefore, there is a strong, positive correlation between number of deaths and number of prescriptions given in California. Our p-value is >0.01, indicating that our correlation is statistically significant. We can reject the null hypothesis of no correlation between the two variables. 
+
+## Is there a relationship between perscriptions dispensed and number of deaths nationwide between 1999-2014?
+
+Next, we wanted to scale back our analysis and ask if there was a relationship between the number of perscriptions given and the number of deaths due to opioids across the U.S.
+
+```{r}
+UsPrescripYear <- data_frame(OpioidDeath$Year, OpioidDeath$Prescriptions.Dispensed.by.US.Retailers.in.that.year..millions.)
+colnames(UsPrescripYear) <- c("Year", "Prescriptions")
+UsPrescripYear <- UsPrescripYear[1:16,]
+UsYearDeaths <- data_frame(OpioidDeath$Year, OpioidDeath$Deaths)
+colnames(UsYearDeaths) <- c("Year", "Deaths")
+UsYearDeaths <- subset(UsYearDeaths, Deaths != "Suppressed")
+UsYearDeaths$Deaths <- as.numeric(as.character(UsYearDeaths$Deaths))
+UsYearDeaths <- aggregate(. ~  Year, data = UsYearDeaths, sum)
+
+UsPrescripDeath <- merge(UsPrescripYear, UsYearDeaths, by = 'Year')
+ggplot(UsPrescripDeath, aes(x = Deaths, y = Prescriptions)) + geom_point()
+UsPrescripDeathRelation <-lm(Prescriptions~Deaths, data=UsPrescripDeath)
+summary(UsPrescripDeathRelation)
+```
+
+We find that our intercept is 84.94 and our slope is 0.0049. We can intepret it as the US having an average increase of 85 deaths per year over the course of 15 years.The slope indicates that for every 1 increase in death is equal to 1/400th of a prescription. Our r squared is 86%, indicating that roughly 86% of the variance in deaths can be explained by the number ofprescriptions. Our F-statstic is 83.34, with a p-value of >0.01, indicating that there is a strong relationship Prescriptions and Number of Deaths in the US. 
+
+Next, we wanted to run a correlation between the number of deaths and the number of prescriptions filled nationwide. 
+
+```{r}
+cor.test(x=UsPrescripDeath$Deaths, y=UsPrescripDeath$Prescriptions, method = 'pearson')
+```
+
+We find that our t value is equal to 9.1293 and our r is equal to 0.9252994, indicating that there is a strong, positive correlation between the number of deaths and the number of prescriptions given in the US. Our p-value is >0.01, indicating that our correlation is statistically significant. We can reject the null hypothesis of no correlation between the two variables. 
+
+## Using our lm model for US deaths related to prescriptions, can we predict furture deaths due to prescriptions?
+
+```{r}
+USPrescripModel <- train(Prescriptions ~ Deaths, data = UsPrescripDeath, method = "lm")
+
+USPrescripcoef.icept <- coef(USPrescripModel$finalModel)[1]
+USPrescripcoef.slope <- coef(USPrescripModel$finalModel)[2]
+
+ggplot(data = UsPrescripDeath, aes(x = Deaths, y = Prescriptions)) +
+  geom_point() +
+  geom_abline(slope = USPrescripcoef.slope, intercept = USPrescripcoef.icept, color = "orange")
+```
+
+Although limited in it's sample size, we can predict that as prescriptions increase across the U.S., so will deaths. One of the interesting takeaways is that more factors may be necessary to investigate, such as income level of state and age, to make a more robust predictive model. 
+
